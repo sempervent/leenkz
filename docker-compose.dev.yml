@@ -1,0 +1,73 @@
+services:
+  # PostgreSQL database
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: leenkz
+      POSTGRES_USER: leenkz
+      POSTGRES_PASSWORD: leenkz
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U leenkz -d leenkz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Python API with hot reloading
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://leenkz:leenkz@postgres/leenkz
+      - SECRET_KEY=dev-secret-key-change-in-production
+      - DEBUG=true
+      - ALLOWED_HOSTS=["http://localhost:3000", "http://127.0.0.1:3000"]
+      - STATIC_DIR=static
+      - BUILD_DIR=dist
+      - SNAPSHOT_MAX_SIZE_MB=25
+      - SNAPSHOT_ALLOWED_MIME_REGEX=.*
+    volumes:
+      - ./leenkz:/app/leenkz
+      - ./pyproject.toml:/app/pyproject.toml
+      - ./alembic.ini:/app/alembic.ini
+      - ./alembic:/app/alembic
+      - ./scripts:/app/scripts
+      - ./tests:/app/tests
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: ["uv", "run", "leenkz", "dev", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # React frontend with hot reloading
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend.dev
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./src:/app/src
+      - ./public:/app/public
+      - ./package.json:/app/package.json
+      - ./vite.config.ts:/app/vite.config.ts
+      - ./tailwind.config.js:/app/tailwind.config.js
+      - ./tsconfig.json:/app/tsconfig.json
+    environment:
+      - VITE_API_URL=http://localhost:8000
+    depends_on:
+      - api
+    command: ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
+
+volumes:
+  postgres_data: 
